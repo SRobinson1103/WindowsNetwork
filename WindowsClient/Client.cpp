@@ -15,17 +15,40 @@ void Client::ConnectToServer(SOCKET& clientSocket, const std::string& serverIP, 
     int result = connect(clientSocket, (sockaddr*)&serverAddr, sizeof(serverAddr));
     if (result == SOCKET_ERROR)
     {
-        std::cerr << "Connection failed: " << WSAGetLastError() << "\n";
-        if (WSAGetLastError() != WSAEWOULDBLOCK)
+        int error = WSAGetLastError();
+        if (error == WSAEWOULDBLOCK)
         {
+            // Connection in progress; wait until writable
+            fd_set writeSet;
+            FD_ZERO(&writeSet);
+            FD_SET(clientSocket, &writeSet);
+
+            timeval timeout = { 5, 0 }; // 5-second timeout
+            result = select(0, nullptr, &writeSet, nullptr, &timeout);
+
+            if (result > 0 && FD_ISSET(clientSocket, &writeSet))
+            {
+                std::cout << "Connected to server at " << serverIP << ":" << port << "\n";
+                return;
+            }
+            else
+            {
+                std::cerr << "Connection timeout or failed.\n";
+                Cleanup(clientSocket);
+                return;
+            }
+        }
+        else
+        {
+            std::cerr << "Connection failed: " << error << "\n";
             Cleanup(clientSocket);
-        }       
-        
-        return;
+            return;
+        }
     }
 
     std::cout << "Connected to server at " << serverIP << ":" << port << "\n";
 }
+
 
 void Client::NonBlockingCommunication(SOCKET& clientSocket)
 {
@@ -59,6 +82,7 @@ void Client::NonBlockingCommunication(SOCKET& clientSocket)
         {
             std::cout << "Connected to the server!\n";
             isConnected = true;
+            sendUsername(clientSocket, readSet);
         }
 
         // Check for incoming data
@@ -68,7 +92,7 @@ void Client::NonBlockingCommunication(SOCKET& clientSocket)
             if (bytesReceived > 0)
             {
                 buffer[bytesReceived] = '\0'; // Null-terminate the received data
-                std::cout << "Server: " << buffer << "\n";
+                std::cout << buffer << "\n";
             }
             else if (bytesReceived == 0)
             {
@@ -85,7 +109,7 @@ void Client::NonBlockingCommunication(SOCKET& clientSocket)
         if (isConnected && _kbhit())
         {
             std::getline(std::cin, input);
-            if (input == "exit")
+            if (input == "/exit")
             {
                 std::cout << "Exiting...\n";
                 break;
@@ -108,5 +132,47 @@ void Client::NonBlockingCommunication(SOCKET& clientSocket)
     }
 
     closesocket(clientSocket);
+}
+
+void Client::sendUsername(SOCKET& clientSocket, fd_set& readSet)
+{
+    while (true)
+    {
+        if (FD_ISSET(clientSocket, &readSet))
+        {
+            // Wait for server prompt
+            std::cout << "Waiting for server prompt...\n";
+            char buffer[BUFFER_SIZE];
+            int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+            if (bytesReceived > 0)
+            {
+                buffer[bytesReceived] = '\0';
+
+                // Display the prompt from the server
+                std::cout << buffer;
+
+                // Send username directly
+                std::string username;
+                std::getline(std::cin, username);
+                int bytesSent = send(clientSocket, username.c_str(), static_cast<int>(username.size()), 0);
+                if (bytesSent == SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK)
+                {
+                    std::cerr << "send() failed in sendUsername(): " << WSAGetLastError() << "\n";
+                }
+                return;
+            }
+            else if (bytesReceived == 0)
+            {
+                std::cerr << "Failed to receive server prompt in sendUsername(). Closing connection.\n";
+                Cleanup(clientSocket);
+                return;
+            }
+            else if (WSAGetLastError() != WSAEWOULDBLOCK)
+            {
+                std::cerr << "recv() failed in sendUsername(): " << WSAGetLastError() << "\n";
+                return;
+            }
+        }
+    }
 }
 

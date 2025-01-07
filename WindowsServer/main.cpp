@@ -10,18 +10,12 @@ int main()
     // Initialize Winsock
     InitializeWinsock();
 
-    // Create a non-blocking TCP socket
-    SOCKET serverSocket = CreateNonBlockingSocket(SOCK_STREAM);
-
     Server server(PORT);
 
     // Bind and listen
-    server.BindAndListen(serverSocket);
+    server.BindAndListen();
     // Accept and handle a client
-    server.AcceptAndHandleClient(serverSocket);
-
-    // Cleanup
-    Cleanup(serverSocket);
+    server.Run();
 
     return 0;
 }
