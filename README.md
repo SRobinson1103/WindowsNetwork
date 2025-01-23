@@ -1,7 +1,7 @@
 # WindowsNetwork
 
-Windows only TCP Client and Server.
+Windows only TCP Client and Server chat system.
 
 Open the .vcxproj files in Visual Studio to build.
 
-Examples can be found in the main.cpp files.
+Start the server, then start one or more clients to chat.
